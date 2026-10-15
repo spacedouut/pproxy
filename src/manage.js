@@ -1,14 +1,16 @@
 import crypto from 'node:crypto';
 import { STRATEGIES } from './pool.js';
+import { loadSettings } from './store.js';
 
 const KEEP = 1000;
 
 // Management API under /manage/v1. Every action gets a request id whose
 // status can be read back from /manage/v1/request?id=...
+// The master key is only read from the env or settings.json on disk, never set over HTTP.
 export function createManager ({ pool, settings, persist, startLink }) {
     const requests = new Map();
 
-    const masterKey = () => process.env.PPROXY_MASTER_KEY || settings.masterKey || null;
+    const masterKey = () => process.env.PPROXY_MASTER_KEY || loadSettings().masterKey || null;
 
     function authorized (req) {
         const key = masterKey();
@@ -72,7 +74,7 @@ export function createManager ({ pool, settings, persist, startLink }) {
         },
         'change-weight': async (body) => {
             const a = account(body.account);
-            const w = Number(body.weight);
+            const w = typeof body.weight === 'number' || (typeof body.weight === 'string' && body.weight.trim()) ? Number(body.weight) : NaN;
             if (!Number.isFinite(w) || w < 0) throw fail(400, '"weight" must be a number >= 0');
             return pool.update(a.id, { weight: w });
         },
@@ -85,19 +87,24 @@ export function createManager ({ pool, settings, persist, startLink }) {
             return { strategy: settings.strategy };
         },
         'refresh-usage': async (body) => {
-            if (body.account) {
-                const a = account(body.account);
-                await pool.refreshUsage(a);
-                return pool.view(a);
+            const targets = body.account ? [account(body.account)] : pool.accounts;
+            const before = new Map(targets.map(a => [a, a.usage?.updatedAt]));
+            await Promise.allSettled(targets.map(a => pool.refreshUsage(a)));
+            const failed = targets.filter(a => a.usage?.updatedAt === before.get(a));
+            if (failed.length) {
+                const why = failed.map(a => `${a.username}: ${a.lastError?.message ?? a.lastError ?? 'refresh failed'}`).join('; ');
+                throw fail(502, `usage refresh failed for ${why}`);
             }
-            await pool.refreshAll();
-            return pool.list();
+            return body.account ? pool.view(targets[0]) : pool.list();
         },
     };
 
+    const PARAMS = ['account', 'weight', 'strategy', 'base', 'async'];
     const redact = (body) => {
-        const { token, ...rest } = body ?? {};
-        return token ? { ...rest, token: '(redacted)' } : rest;
+        const out = {};
+        for (const k of PARAMS) if (body[k] !== undefined) out[k] = body[k];
+        if (body.token !== undefined) out.token = '(redacted)';
+        return out;
     };
 
     // Returns true if it handled the request.
@@ -144,6 +151,10 @@ export function createManager ({ pool, settings, persist, startLink }) {
             body = await readBody(req);
         } catch (e) {
             json(res, e.status ?? 400, { error: { message: e.message } });
+            return true;
+        }
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+            json(res, 400, { error: { message: 'request body must be a JSON object' } });
             return true;
         }
 

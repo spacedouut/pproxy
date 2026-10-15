@@ -249,6 +249,10 @@ async function main () {
         let value = rest.join(' ');
         try { value = JSON.parse(value); } catch { /* plain string */ }
         if (value === 'null' || value === '') value = null;
+        if (sub === 'masterKey') {
+            saveSettings({ ...local, masterKey: value });
+            return console.log('masterKey updated');
+        }
         if (['host', 'port'].includes(sub)) {
             saveSettings({ ...local, [sub]: value });
             return console.log(`${sub} saved; restart the server to apply`);
@@ -275,7 +279,6 @@ async function main () {
         if (local.masterKey && !flags.rotate) return console.log(local.masterKey);
         const key = `pmk_${crypto.randomBytes(24).toString('base64url')}`;
         saveSettings({ ...local, masterKey: key });
-        if (readPid()) await api('PATCH', '/api/settings', { masterKey: key });
         console.log(key);
         return console.error('send it as `Authorization: Bearer <key>` or `x-master-key` to /manage/v1/*');
     }

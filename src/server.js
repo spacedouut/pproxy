@@ -88,7 +88,7 @@ export function createServer (overrides = {}) {
     let modelCache = null;
 
     const persist = () => {
-        const { host, port, ...rest } = settings;
+        const { host, port, masterKey, ...rest } = settings;
         const saved = loadSettings();
         saveSettings({ ...saved, ...rest, host: saved.host, port: saved.port });
     };
@@ -103,7 +103,7 @@ export function createServer (overrides = {}) {
         modelMap: settings.modelMap,
         usageRefreshSec: settings.usageRefreshSec,
         apiKeySet: !!settings.apiKey,
-        masterKeySet: !!(process.env.PPROXY_MASTER_KEY || settings.masterKey),
+        masterKeySet: !!(process.env.PPROXY_MASTER_KEY || loadSettings().masterKey),
     });
 
     async function models () {
@@ -179,7 +179,11 @@ export function createServer (overrides = {}) {
     // ---- account linking -------------------------------------------------
 
     function startLink (base, onDone) {
-        for (const [k, v] of links) if (Date.now() - v.created > LINK_TTL_MS) links.delete(k);
+        for (const [k, v] of links) {
+            if (Date.now() - v.created <= LINK_TTL_MS) continue;
+            links.delete(k);
+            if (v.status === 'pending') v.onDone?.(Object.assign(new Error('sign-in link expired'), { status: 410 }));
+        }
         const state = crypto.randomUUID();
         const redirect = `${base.replace(/\/$/, '')}/auth/callback/${state}`;
         const url = new URL(PUTER_GUI);
@@ -338,7 +342,6 @@ export function createServer (overrides = {}) {
                 if (typeof body.defaultModel === 'string' && body.defaultModel) settings.defaultModel = body.defaultModel;
                 if (body.modelMap && typeof body.modelMap === 'object') settings.modelMap = body.modelMap;
                 if (body.apiKey !== undefined) settings.apiKey = body.apiKey || null;
-                if (body.masterKey !== undefined) settings.masterKey = body.masterKey || null;
                 if (Number.isFinite(body.usageRefreshSec)) settings.usageRefreshSec = body.usageRefreshSec;
                 persist();
                 return json(res, 200, publicSettings());

@@ -99,7 +99,7 @@ test('management API: off without a key, then master key auth and request ids', 
     let r = await mpost('/manage/v1/set-strategy', { strategy: 'priority' }, 'x');
     assert.equal(r.status, 503);
 
-    app.settings.masterKey = 'mk';
+    process.env.PPROXY_MASTER_KEY = 'mk';
     r = await mpost('/manage/v1/set-strategy', { strategy: 'priority' }, 'wrong');
     assert.equal(r.status, 401);
 
@@ -139,8 +139,15 @@ test('management API: off without a key, then master key auth and request ids', 
     assert.equal(j.status, 'pending');
     assert.match(j.result.url, /action=authme/);
 
+    r = await mpost('/manage/v1/change-weight', { account: 'bob', weight: null }, 'mk');
+    assert.equal(r.status, 400);
+    r = await mpost('/manage/v1/set-strategy', null, 'mk');
+    assert.equal(r.status, 400);
+    r = await fetch(base + '/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ masterKey: 'evil' }) });
+    assert.equal((await mpost('/manage/v1/accounts', {}, 'evil')).status, 401);
+
     r = await mpost('/manage/v1/remove-account?async=1', { account: 'bob' }, 'mk');
     assert.equal(r.status, 202);
-    app.settings.masterKey = null;
+    delete process.env.PPROXY_MASTER_KEY;
     app.settings.strategy = 'round-robin';
 });
