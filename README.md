@@ -70,7 +70,7 @@ pprox models [filter]
 
 ## Model aliases
 
-Clients often hardcode model names. Map them in the UI or with `pprox config modelMap '{"claude-*":"claude-sonnet-4-5","fast":"gpt-5.4-nano"}'`. `*` matches anything. Requests with no model use `defaultModel`.
+Clients often hardcode model names. Map them in the UI or with `pprox config modelMap '{"claude-*":"claude-sonnet-4-6","fast":"gpt-5.4-nano"}'`. `*` matches anything. Requests with no model use `defaultModel`.
 
 ## Config and security
 
