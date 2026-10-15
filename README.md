@@ -98,6 +98,32 @@ Every action returns a request record and an `X-Request-Id` header:
 
 Reads: `GET /manage/v1/request?id=req_...` (or `/manage/v1/request/req_...`), `GET /manage/v1/requests?limit=50`, `GET /manage/v1/accounts`. The last 1000 requests are kept in memory.
 
+## Discord bot
+
+`discord/` has a small bot that adds accounts through the management API, so people can add their Puter accounts from Discord without touching the server. It isn't part of the npm package; run it from a checkout:
+
+```sh
+cd discord && npm install
+DISCORD_TOKEN=... PPROXY_MASTER_KEY=... npm start
+```
+
+Commands (replies are only visible to whoever ran them):
+
+- `/add` sends a Puter sign-in button and updates the message once the account is added.
+- `/add token:<token>` adds an account straight from a Puter token.
+- `/accounts` lists accounts and their remaining credit.
+
+Both commands need Manage Server by default (change that under Server Settings > Integrations). Other settings:
+
+| Env | Default | |
+| --- | --- | --- |
+| `PPROXY_URL` | `http://127.0.0.1:9032` | Where the bot reaches pproxy |
+| `PPROXY_PUBLIC_URL` | same as `PPROXY_URL` | Where Puter sends the browser back after sign-in. Set this if the people signing in can't reach `PPROXY_URL`. pproxy rejects non-local `Host` headers while bound to `127.0.0.1`, so behind a reverse proxy either have it send `Host: localhost` or bind pproxy to another interface with an API key |
+| `DISCORD_ALLOWED_USERS` | anyone with the permission | Comma-separated Discord user ids |
+| `DISCORD_GUILD_ID` | global | Register commands in one server (shows up instantly; global can take a while) |
+
+If the sign-in redirect can't reach pproxy, the page won't load, but the `token=` value is still in its address bar; paste it into `/add token:`.
+
 ## Model aliases
 
 Clients often hardcode model names. Map them in the UI or with `pprox config modelMap '{"claude-*":"claude-sonnet-4-6","fast":"gpt-5.4-nano"}'`. `*` matches anything. Requests with no model use `defaultModel`.
