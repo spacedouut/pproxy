@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Client, Events, GatewayIntentBits, REST, Routes } from 'discord.js';
+import { Resvg } from '@resvg/resvg-js';
 import { DEFINITIONS, createCommands } from './commands.js';
 
 const env = process.env;
@@ -15,6 +16,7 @@ const commands = createCommands({
     masterKey: env.PPROXY_MASTER_KEY,
     publicUrl: env.PPROXY_PUBLIC_URL,
     allowedUsers: (env.DISCORD_ALLOWED_USERS || '').split(',').map(s => s.trim()).filter(Boolean),
+    renderPng: (svg) => new Resvg(svg).render().asPng(),
 });
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -25,7 +27,7 @@ client.once(Events.ClientReady, async (c) => {
         ? Routes.applicationGuildCommands(c.application.id, env.DISCORD_GUILD_ID)
         : Routes.applicationCommands(c.application.id);
     await rest.put(route, { body: DEFINITIONS });
-    console.log(`logged in as ${c.user.tag}, registered /add and /accounts${env.DISCORD_GUILD_ID ? ` in guild ${env.DISCORD_GUILD_ID}` : ' globally'}`);
+    console.log(`logged in as ${c.user.tag}, registered /add, /usage and /accounts${env.DISCORD_GUILD_ID ? ` in guild ${env.DISCORD_GUILD_ID}` : ' globally'}`);
 });
 
 client.on(Events.InteractionCreate, (interaction) => {

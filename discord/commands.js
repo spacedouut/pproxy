@@ -19,6 +19,12 @@ export const DEFINITIONS = [
         }],
     },
     {
+        name: 'usage',
+        description: 'Credit used and left across all pproxy accounts',
+        default_member_permissions: MANAGE_GUILD,
+        contexts: [0],
+    },
+    {
         name: 'accounts',
         description: 'List pproxy accounts and their credit',
         default_member_permissions: MANAGE_GUILD,
@@ -28,6 +34,64 @@ export const DEFINITIONS = [
 
 const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? `$${(v / 1e8).toFixed(2)}` : `${v > 0 && v < 1 ? v.toPrecision(2) : Math.round(v * 10) / 10}`;
 
+const amount = (v, unit) => unit === 'microcents' ? credit(v, unit) : Number(credit(v, unit)).toLocaleString('en-US');
+
+export function meter (fraction, width = 20) {
+    const f = Math.min(1, Math.max(0, fraction));
+    const full = Math.round(f * width);
+    return `${'█'.repeat(full)}${'░'.repeat(width - full)}`;
+}
+
+// Totals per credit unit, in case accounts report different units.
+export function usageTotals (accounts) {
+    const totals = new Map();
+    let unknown = 0;
+    for (const a of accounts) {
+        const u = a.usage;
+        if (u?.allowance == null || u.remaining == null) {
+            unknown++;
+            continue;
+        }
+        const t = totals.get(u.unit) ?? { allowance: 0, remaining: 0, used: 0, count: 0 };
+        t.allowance += u.allowance;
+        t.remaining += Math.max(0, u.remaining);
+        t.used += Math.max(0, u.allowance - Math.max(0, u.remaining));
+        t.count++;
+        totals.set(u.unit, t);
+    }
+    return { totals, unknown };
+}
+
+// Same thresholds as the dashboard: green over 50% left, yellow 20-50%, red under 20%.
+const fillColor = (left) => left > 0.5 ? '#6fd18a' : left >= 0.2 ? '#f2d14b' : '#ff5d5d';
+
+export function usageSvg ({ allowance, used }, { width = 800, height = 48 } = {}) {
+    const f = allowance ? Math.min(1, Math.max(0, used / allowance)) : 0;
+    const pad = 12;
+    const w = width - pad * 2;
+    const h = height - pad * 2;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`
+        + `<rect width="${width}" height="${height}" rx="10" fill="#0b0b0b"/>`
+        + `<clipPath id="t"><rect x="${pad}" y="${pad}" width="${w}" height="${h}" rx="${h / 2}"/></clipPath>`
+        + `<g clip-path="url(#t)"><rect x="${pad}" y="${pad}" width="${w}" height="${h}" fill="#1f1f1f"/>`
+        + `<rect x="${pad}" y="${pad}" width="${(w * f).toFixed(1)}" height="${h}" fill="${fillColor(1 - f)}"/></g></svg>`;
+}
+
+// With meter: false the unicode bar is left out (the image replaces it).
+export function describeUsage (accounts, { meter: withMeter = true } = {}) {
+    const { totals, unknown } = usageTotals(accounts);
+    const lines = [];
+    for (const [unit, t] of totals) {
+        const used = t.used;
+        const pct = t.allowance ? Math.round((used / t.allowance) * 100) : 0;
+        const label = unit === 'microcents' ? '' : ` ${unit}`;
+        if (withMeter) lines.push(`\`${meter(t.allowance ? used / t.allowance : 0)}\` ${pct}% used`);
+        lines.push(`${withMeter ? '' : `${pct}% used: `}**${amount(used, unit)}** of **${amount(t.allowance, unit)}**${label} used, ${amount(t.remaining, unit)} left across ${t.count} account${t.count === 1 ? '' : 's'}`);
+    }
+    if (unknown) lines.push(`${unknown} account${unknown === 1 ? '' : 's'} with unknown usage not counted`);
+    return lines.join('\n');
+}
+
 export function describeAccount (a) {
     const u = a.usage;
     const left = u ? `${credit(u.remaining, u.unit)} of ${credit(u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ` ${u.unit}` : ''} left` : 'usage unknown';
@@ -35,7 +99,7 @@ export function describeAccount (a) {
     return `**${a.username}** \`${a.id}\` ${left}${flags ? ` [${flags}]` : ''}`;
 }
 
-export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers = [], pollMs = 3000, timeoutMs = 14 * 60 * 1000 }) {
+export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers = [], renderPng, pollMs = 3000, timeoutMs = 14 * 60 * 1000 }) {
     const base = pproxyUrl.replace(/\/$/, '');
 
     async function manage (method, path, body) {
@@ -94,7 +158,16 @@ export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers 
         return interaction.editReply(lines.join('\n'));
     }
 
-    const handlers = { add, accounts };
+    async function usage (interaction) {
+        const { data = [] } = await manage('GET', '/accounts');
+        if (!data.length) return interaction.editReply('No accounts yet. Add one with `/add`.');
+        const { totals } = usageTotals(data);
+        if (!renderPng || !totals.size) return interaction.editReply(describeUsage(data));
+        const files = [...totals.values()].map((t, i) => ({ attachment: renderPng(usageSvg(t)), name: `usage${i || ''}.png` }));
+        return interaction.editReply({ content: describeUsage(data, { meter: false }), files });
+    }
+
+    const handlers = { add, accounts, usage };
 
     async function handle (raw) {
         const run = handlers[raw.commandName];
