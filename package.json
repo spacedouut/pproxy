@@ -2,6 +2,20 @@
   "name": "pproxy",
   "version": "0.1.0",
   "description": "Pool your Puter accounts behind OpenAI and Anthropic compatible endpoints",
+  "keywords": [
+    "puter",
+    "openai",
+    "anthropic",
+    "proxy",
+    "llm",
+    "responses-api"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spacedouut/pproxy.git"
+  },
+  "homepage": "https://github.com/spacedouut/pproxy#readme",
+  "bugs": "https://github.com/spacedouut/pproxy/issues",
   "type": "module",
   "bin": {
     "pprox": "bin/pprox.js"
@@ -14,7 +28,8 @@
   ],
   "scripts": {
     "start": "node bin/pprox.js serve",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "npm test"
   },
   "engines": {
     "node": ">=20"

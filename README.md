@@ -3,7 +3,7 @@
 Pool your [Puter](https://developer.puter.com/) accounts behind one local endpoint that speaks OpenAI and Anthropic. Sign in with as many Puter accounts as you like, pick how requests get spread across them, and point any client at `http://localhost:9032`.
 
 ```sh
-npm i -g github:spacedouut/pproxy
+npm i -g pproxy
 pprox serve --bg
 pprox accounts add        # opens Puter sign-in in your browser
 ```
