@@ -8,7 +8,7 @@
 :root {
     --bg: #000; --panel: #0b0b0b; --line: #1f1f1f; --line2: #2c2c2c;
     --fg: #ececec; --dim: #8a8a8a; --faint: #555;
-    --accent: #ffb224; --bad: #ff5d5d; --ok: #6fd18a;
+    --accent: #ffb224; --bad: #ff5d5d; --ok: #6fd18a; --warn: #f2d14b;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }
@@ -53,10 +53,13 @@ h2 .spacer { flex: 1; }
 .acct .err { grid-column: 2 / -1; color: var(--bad); font-size: .8rem; margin-top: -.4rem; }
 .dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--ok); }
 .dot.busy { background: var(--accent); box-shadow: 0 0 0 3px rgba(255,178,36,.18); }
-.dot.bad { background: var(--bad); }
+.dot.bad, .dot.low { background: var(--bad); }
+.dot.warn { background: var(--warn); }
 .dot.off { background: var(--faint); }
 .bar { height: 4px; background: var(--line); position: relative; }
 .bar i { position: absolute; inset: 0 auto 0 0; background: var(--fg); }
+.bar.ok i { background: var(--ok); }
+.bar.warn i { background: var(--warn); }
 .bar.low i { background: var(--bad); }
 .credit { font-size: .78rem; color: var(--dim); margin-top: .3rem; font-variant-numeric: tabular-nums; }
 .cols { display: grid; grid-template-columns: 1.4rem minmax(9rem, 1.2fr) minmax(10rem, 2fr) 5rem 5rem 4.5rem auto; gap: 1rem; color: var(--faint); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; padding-bottom: .4rem; }
@@ -154,7 +157,8 @@ td.trunc { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; }
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const dollars = (m) => m == null ? '?' : '$' + (m / 1e8).toFixed(2);
+const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? '$' + (v / 1e8).toFixed(2) : (v > 0 && v < 1 ? v.toPrecision(2) : (Math.round(v * 10) / 10).toLocaleString());
+const compact = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
 const ago = (t) => { if (!t) return 'never'; const s = (Date.now() - t) / 1000; return s < 60 ? Math.round(s) + 's ago' : s < 3600 ? Math.round(s / 60) + 'm ago' : Math.round(s / 3600) + 'h ago'; };
 const base = location.origin;
 let key = localStorage.getItem('pproxy-key') || '';
@@ -187,18 +191,19 @@ function renderAccounts (list) {
         el.innerHTML = `<div class="empty"><p>No accounts yet. Each Puter account you sign in with adds its monthly credit to the pool.</p><p>Point any OpenAI or Anthropic client at <b>${esc(base)}/v1</b> once one is added.</p></div>`;
         return;
     }
-    el.innerHTML = `<div class="cols"><span></span><span>account</span><span>monthly credit</span><span class="r">requests</span><span class="r">spent</span><span class="r">weight</span><span></span></div>` + list.map(a => {
+    el.innerHTML = `<div class="cols"><span></span><span>account</span><span>monthly credit</span><span class="r">requests</span><span class="r">tokens</span><span class="r">weight</span><span></span></div>` + list.map(a => {
         const u = a.usage;
         const pct = u && u.allowance ? Math.max(0, Math.min(100, 100 * u.remaining / u.allowance)) : 0;
-        const dot = !a.enabled ? 'off' : a.status !== 'ok' ? 'bad' : a.inflight ? 'busy' : '';
+        const level = !u || !u.allowance ? '' : pct > 50 ? 'ok' : pct >= 20 ? 'warn' : 'low';
+        const dot = !a.enabled ? 'off' : a.status !== 'ok' ? 'bad' : a.inflight ? 'busy' : level;
         const title = !a.enabled ? 'disabled' : a.status !== 'ok' ? a.status : a.inflight ? a.inflight + ' in flight' : 'ready';
         return `<div class="acct ${a.enabled ? '' : 'off'}" data-id="${esc(a.id)}">
             <div class="dot ${dot}" title="${esc(title)}"></div>
             <div class="name">${esc(a.username)}<span class="id" title="Puter user id">${esc(a.id)}</span></div>
-            <div><div class="bar ${pct < 10 ? 'low' : ''}"><i style="width:${pct}%"></i></div>
-                <div class="credit">${u ? `${dollars(u.remaining)} left of ${dollars(u.allowance)}` : 'usage unknown'} · used ${ago(a.lastUsed)}</div></div>
+            <div><div class="bar ${level}"><i style="width:${pct}%"></i></div>
+                <div class="credit">${u ? `${credit(u.remaining, u.unit)} of ${credit(u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ' ' + esc(u.unit) : ''} left` : 'usage unknown'} · used ${ago(a.lastUsed)}</div></div>
             <div class="num"><b>${a.stats.requests}</b>${a.stats.errors ? ` <span title="errors">/${a.stats.errors}</span>` : ''}</div>
-            <div class="num">${a.stats.cost ? dollars(a.stats.cost) : '—'}</div>
+            <div class="num">${a.stats.inputTokens + a.stats.outputTokens ? compact(a.stats.inputTokens + a.stats.outputTokens) : '—'}</div>
             <div class="num"><input class="weight" type="number" min="0" step="1" value="${a.weight}" title="Weight for the random strategy"></div>
             <div><button class="btn small toggle">${a.enabled ? 'disable' : 'enable'}</button> <button class="btn small ghost remove" title="Remove">✕</button></div>
             ${a.lastError && a.status !== 'ok' ? `<div class="err">${esc(a.lastError)}</div>` : ''}

@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS = {
     strategy: 'round-robin',
     failover: true,
     apiKey: null,
+    masterKey: null,
     defaultModel: 'gpt-5.4-nano',
     modelMap: {},
     usageRefreshSec: 300,

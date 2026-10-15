@@ -9,6 +9,7 @@ import { HttpError } from './formats/common.js';
 import * as chat from './formats/chat.js';
 import * as anthropic from './formats/anthropic.js';
 import * as responses from './formats/responses.js';
+import { createManager } from './manage.js';
 
 const UI_FILE = fileURLToPath(new URL('../public/index.html', import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url))).version;
@@ -62,6 +63,10 @@ function readBody (req) {
     });
 }
 
+function escapeHtml (s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
 function json (res, status, body) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -83,7 +88,7 @@ export function createServer (overrides = {}) {
     let modelCache = null;
 
     const persist = () => {
-        const { host, port, ...rest } = settings;
+        const { host, port, masterKey, ...rest } = settings;
         const saved = loadSettings();
         saveSettings({ ...saved, ...rest, host: saved.host, port: saved.port });
     };
@@ -98,6 +103,7 @@ export function createServer (overrides = {}) {
         modelMap: settings.modelMap,
         usageRefreshSec: settings.usageRefreshSec,
         apiKeySet: !!settings.apiKey,
+        masterKeySet: !!(process.env.PPROXY_MASTER_KEY || loadSettings().masterKey),
     });
 
     async function models () {
@@ -158,7 +164,8 @@ export function createServer (overrides = {}) {
             }
             entry.status = entry.error ? 502 : 200;
         } catch (e) {
-            const status = e.status && e.status >= 400 && e.status < 600 ? e.status : (e instanceof SyntaxError ? 400 : 502);
+            let status = e.status && e.status >= 400 && e.status < 600 ? e.status : (e instanceof SyntaxError ? 400 : 502);
+            if (status === 502 && /model not found/i.test(e.message)) status = 404;
             entry.status = e.status === 499 ? 499 : status;
             entry.error = e.message;
             if (!headersSent) json(res, status, errorBody(status, e.message, e.code));
@@ -171,37 +178,46 @@ export function createServer (overrides = {}) {
 
     // ---- account linking -------------------------------------------------
 
-    function startLink (base) {
-        for (const [k, v] of links) if (Date.now() - v.created > LINK_TTL_MS) links.delete(k);
+    function startLink (base, onDone) {
+        for (const [k, v] of links) {
+            if (Date.now() - v.created <= LINK_TTL_MS) continue;
+            links.delete(k);
+            if (v.status === 'pending') v.onDone?.(Object.assign(new Error('sign-in link expired'), { status: 410 }));
+        }
         const state = crypto.randomUUID();
         const redirect = `${base.replace(/\/$/, '')}/auth/callback/${state}`;
         const url = new URL(PUTER_GUI);
         url.searchParams.set('action', 'authme');
         url.searchParams.set('redirectURL', redirect);
-        links.set(state, { created: Date.now(), status: 'pending' });
+        links.set(state, { created: Date.now(), status: 'pending', onDone });
         return { state, url: url.toString() };
     }
 
     async function finishLink (state, token, res) {
         const link = links.get(state);
-        const page = (title, msg) => {
+        const page = (rawTitle, rawMsg) => {
+            const title = escapeHtml(rawTitle);
+            const msg = escapeHtml(rawMsg);
             res.writeHead(link ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8' });
             res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title>
 <style>body{background:#000;color:#eee;font:16px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0}main{max-width:28rem;padding:2rem}h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#aaa;margin:0}</style>
-<main><h1>${title}</h1><p>${msg}</p></main>`);
+<main><h1>${title}</h1><p>${msg}</p></main><script>history.replaceState(null, '', location.pathname)</script>`);
         };
         if (!link || link.status !== 'pending') return page('Link expired', 'Start again from pproxy.');
         if (!token) {
             link.status = 'error';
             link.error = 'Puter did not return a token';
+            link.onDone?.(new Error(link.error));
             return page('Sign-in failed', 'Puter did not return a token. Start again from pproxy.');
         }
         try {
             const account = await pool.addToken(token);
             Object.assign(link, { status: 'done', account });
+            link.onDone?.(null, account);
             page(`Added ${account.username}`, 'You can close this tab.');
         } catch (e) {
             Object.assign(link, { status: 'error', error: e.message });
+            link.onDone?.(e);
             page('Could not add account', e.message);
         }
     }
@@ -239,6 +255,7 @@ export function createServer (overrides = {}) {
             return finishLink(p.slice('/auth/callback/'.length), url.searchParams.get('token'), res);
         }
         if (p === '/health') return json(res, 200, { ok: true });
+        if (await manager.handle(req, res, { p, method, url, readBody, json })) return;
 
         const fmtFor = (req.headers['anthropic-version'] || req.headers['x-api-key'] && !req.headers.authorization) ? 'anthropic' : 'chat';
         if (!authorized(req)) {
@@ -335,6 +352,8 @@ export function createServer (overrides = {}) {
 
         return json(res, 404, FORMATS[fmtFor].errorBody(404, `no route for ${method} ${p}`));
     }
+
+    const manager = createManager({ pool, settings, persist, startLink });
 
     const server = http.createServer((req, res) => {
         handle(req, res).catch((e) => {

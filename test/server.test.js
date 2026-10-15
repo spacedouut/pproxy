@@ -93,3 +93,61 @@ test('settings: strategy validation and API key enforcement', async () => {
     const viaHeader = await post('/v1/messages', { max_tokens: 5, messages: [{ role: 'user', content: 'x' }] }, { 'x-api-key': 'k' });
     assert.equal(viaHeader.status, 200);
 });
+
+test('management API: off without a key, then master key auth and request ids', async () => {
+    const mpost = (p, body, key) => post(p, body, key ? { Authorization: `Bearer ${key}` } : {});
+    let r = await mpost('/manage/v1/set-strategy', { strategy: 'priority' }, 'x');
+    assert.equal(r.status, 503);
+
+    process.env.PPROXY_MASTER_KEY = 'mk';
+    r = await mpost('/manage/v1/set-strategy', { strategy: 'priority' }, 'wrong');
+    assert.equal(r.status, 401);
+
+    r = await mpost('/manage/v1/set-strategy', { strategy: 'priority' }, 'mk');
+    let j = await r.json();
+    assert.equal(r.status, 200);
+    assert.equal(j.status, 'succeeded');
+    assert.equal(r.headers.get('x-request-id'), j.request_id);
+    assert.equal(app.settings.strategy, 'priority');
+
+    r = await mpost('/manage/v1/change-weight', { account: 'nobody', weight: 2 }, 'mk');
+    j = await r.json();
+    assert.equal(r.status, 404);
+    assert.equal(j.status, 'failed');
+    const g = await fetch(`${base}/manage/v1/request?id=${j.request_id}`, { headers: { 'x-master-key': 'mk' } });
+    const rec = await g.json();
+    assert.equal(rec.status, 'failed');
+    assert.match(rec.error.message, /no such account/);
+
+    app.pool.addToken = async (token) => {
+        app.pool.accounts.push({ id: 'u9', username: 'bob', token, enabled: true, weight: 1, status: 'ok', usage: null, stats: { requests: 0, errors: 0, inputTokens: 0, outputTokens: 0, cost: 0 } });
+        return app.pool.view(app.pool.accounts.at(-1));
+    };
+    r = await mpost('/manage/v1/add-account', { token: 'secret-token' }, 'mk');
+    j = await r.json();
+    assert.equal(j.status, 'succeeded');
+    assert.equal(j.result.username, 'bob');
+    assert.equal(j.params.token, '(redacted)');
+
+    r = await mpost('/manage/v1/change-weight', { account: 'bob', weight: 3 }, 'mk');
+    j = await r.json();
+    assert.equal(j.result.weight, 3);
+
+    r = await mpost('/manage/v1/add-account', {}, 'mk');
+    j = await r.json();
+    assert.equal(r.status, 202);
+    assert.equal(j.status, 'pending');
+    assert.match(j.result.url, /action=authme/);
+
+    r = await mpost('/manage/v1/change-weight', { account: 'bob', weight: null }, 'mk');
+    assert.equal(r.status, 400);
+    r = await mpost('/manage/v1/set-strategy', null, 'mk');
+    assert.equal(r.status, 400);
+    r = await fetch(base + '/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ masterKey: 'evil' }) });
+    assert.equal((await mpost('/manage/v1/accounts', {}, 'evil')).status, 401);
+
+    r = await mpost('/manage/v1/remove-account?async=1', { account: 'bob' }, 'mk');
+    assert.equal(r.status, 202);
+    delete process.env.PPROXY_MASTER_KEY;
+    app.settings.strategy = 'round-robin';
+});

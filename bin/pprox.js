@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -22,9 +23,10 @@ usage:
   pprox strategy [name]                                 show or set routing strategy
   pprox config [key] [value]                            show or set a setting
   pprox models [filter]                                 list Puter models
+  pprox manage key [--rotate]                           create or show the management API master key
   pprox logs [-f]                                       print the background server log
 
-env: PPROXY_HOME (default ~/.pproxy), PPROXY_URL (default from settings)`;
+env: PPROXY_HOME (default ~/.pproxy), PPROXY_URL (default from settings), PPROXY_MASTER_KEY`;
 
 const { values: flags, positionals } = parseArgs({
     allowPositionals: true,
@@ -36,6 +38,7 @@ const { values: flags, positionals } = parseArgs({
         headless: { type: 'boolean' },
         token: { type: 'string' },
         follow: { type: 'boolean', short: 'f' },
+        rotate: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
     },
 });
@@ -69,7 +72,7 @@ async function api (method, path, body) {
     return data;
 }
 
-const dollars = (micro) => micro == null ? '?' : `$${(micro / 1e8).toFixed(2)}`;
+const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? `$${(v / 1e8).toFixed(2)}` : `${v > 0 && v < 1 ? v.toPrecision(2) : Math.round(v * 10) / 10}`;
 
 function readPid () {
     try {
@@ -151,7 +154,8 @@ async function listAccounts () {
     const list = await api('GET', '/api/accounts');
     if (!list.length) return console.log('no accounts yet. Add one with `pprox accounts add`.');
     for (const a of list) {
-        const remaining = a.usage ? `${dollars(a.usage.remaining)} of ${dollars(a.usage.allowance)} left` : 'usage unknown';
+        const u = a.usage;
+        const remaining = u ? `${credit(u.remaining, u.unit)} of ${credit(u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ` ${u.unit}` : ''} left` : 'usage unknown';
         const flagsTxt = [!a.enabled && 'disabled', a.status !== 'ok' && a.status].filter(Boolean).join(', ');
         console.log(`${a.username.padEnd(20)} ${a.id}  ${remaining}  ${a.stats.requests} req${flagsTxt ? `  [${flagsTxt}]` : ''}`);
     }
@@ -237,14 +241,18 @@ async function main () {
     case 'config': {
         const local = loadSettings();
         if (!sub) {
-            const shown = { ...local, apiKey: local.apiKey ? '(set)' : null };
+            const shown = { ...local, apiKey: local.apiKey ? '(set)' : null, masterKey: local.masterKey ? '(set)' : null };
             return console.log(JSON.stringify(shown, null, 2));
         }
         if (!(sub in DEFAULT_SETTINGS)) die(`unknown setting "${sub}"`);
-        if (rest[0] === undefined) return console.log(JSON.stringify(sub === 'apiKey' && local.apiKey ? '(set)' : local[sub]));
+        if (rest[0] === undefined) return console.log(JSON.stringify(['apiKey', 'masterKey'].includes(sub) && local[sub] ? '(set)' : local[sub]));
         let value = rest.join(' ');
         try { value = JSON.parse(value); } catch { /* plain string */ }
         if (value === 'null' || value === '') value = null;
+        if (sub === 'masterKey') {
+            saveSettings({ ...local, masterKey: value });
+            return console.log('masterKey updated');
+        }
         if (['host', 'port'].includes(sub)) {
             saveSettings({ ...local, [sub]: value });
             return console.log(`${sub} saved; restart the server to apply`);
@@ -264,6 +272,15 @@ async function main () {
             console.log(`${m.id.padEnd(48)} ${m.provider ?? ''}`);
         }
         return;
+    }
+    case 'manage': {
+        if (sub !== 'key') die('usage: pprox manage key [--rotate]');
+        const local = loadSettings();
+        if (local.masterKey && !flags.rotate) return console.log(local.masterKey);
+        const key = `pmk_${crypto.randomBytes(24).toString('base64url')}`;
+        saveSettings({ ...local, masterKey: key });
+        console.log(key);
+        return console.error('send it as `Authorization: Bearer <key>` or `x-master-key` to /manage/v1/*');
     }
     case 'logs': {
         if (!fs.existsSync(PATHS.log)) return console.log('no log yet');
