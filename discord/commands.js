@@ -3,6 +3,7 @@
 
 const EPHEMERAL = 64;
 const MANAGE_GUILD = '32';
+const NO_MENTIONS = { parse: [] };
 
 export const DEFINITIONS = [
     {
@@ -70,7 +71,8 @@ export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers 
         const end = Date.now() + timeoutMs;
         while (Date.now() < end) {
             await new Promise(r => setTimeout(r, pollMs));
-            const cur = await manage('GET', `/request/${rec.request_id}`);
+            const cur = await manage('GET', `/request/${rec.request_id}`).catch(() => null);
+            if (!cur) continue;
             if (cur.status === 'succeeded') return interaction.editReply({ content: added(cur.result), components: [] });
             if (cur.status === 'failed') return interaction.editReply({ content: failed(cur), components: [] });
         }
@@ -79,16 +81,32 @@ export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers 
 
     async function accounts (interaction) {
         const { data = [] } = await manage('GET', '/accounts');
-        let text = data.length ? data.map(describeAccount).join('\n') : 'No accounts yet. Add one with `/add`.';
-        if (text.length > 1900) text = `${text.slice(0, 1900)}\n...`;
-        return interaction.editReply(text);
+        if (!data.length) return interaction.editReply('No accounts yet. Add one with `/add`.');
+        const lines = [];
+        let len = 0;
+        for (const a of data) {
+            const line = describeAccount(a);
+            if (len + line.length > 1900) break;
+            lines.push(line);
+            len += line.length + 1;
+        }
+        if (lines.length < data.length) lines.push(`...and ${data.length - lines.length} more`);
+        return interaction.editReply(lines.join('\n'));
     }
 
     const handlers = { add, accounts };
 
-    async function handle (interaction) {
-        const run = handlers[interaction.commandName];
+    async function handle (raw) {
+        const run = handlers[raw.commandName];
         if (!run) return;
+        const quiet = (o) => ({ ...(typeof o === 'string' ? { content: o } : o), allowedMentions: NO_MENTIONS });
+        const interaction = {
+            user: raw.user,
+            options: raw.options,
+            deferReply: (o) => raw.deferReply(o),
+            reply: (o) => raw.reply(quiet(o)),
+            editReply: (o) => raw.editReply(quiet(o)),
+        };
         if (allowedUsers.length && !allowedUsers.includes(interaction.user.id)) {
             return interaction.reply({ content: 'You are not allowed to manage this pproxy.', flags: EPHEMERAL });
         }

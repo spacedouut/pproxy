@@ -94,3 +94,39 @@ test('allowed users and a wrong master key', async () => {
     await createCommands({ pproxyUrl: base, masterKey: 'nope' }).handle(it);
     assert.match(it.replies.at(-1).content, /pproxy error: invalid or missing master key/);
 });
+
+test('replies never ping, long lists say how many were cut', async () => {
+    for (let i = 0; i < 40; i++) app.pool.accounts.push({ id: `bulk-${i}-${'x'.repeat(30)}`, username: `@everyone${i}`, enabled: true, status: 'ok', stats: { requests: 0 } });
+    const it = fake('accounts');
+    await createCommands({ pproxyUrl: base, masterKey: 'mk' }).handle(it);
+    const last = it.replies.at(-1);
+    assert.deepEqual(last.allowedMentions, { parse: [] });
+    assert.ok(last.content.length <= 2000);
+    assert.match(last.content, /\.\.\.and \d+ more$/);
+    app.pool.accounts = app.pool.accounts.filter(a => !a.id.startsWith('bulk-'));
+});
+
+test('/add keeps polling through a failed poll', async () => {
+    const c = createCommands({ pproxyUrl: base, masterKey: 'mk', pollMs: 20, timeoutMs: 5000 });
+    const realFetch = globalThis.fetch;
+    let failOnce = true;
+    globalThis.fetch = (u, o) => {
+        if (failOnce && String(u).includes('/manage/v1/request/')) {
+            failOnce = false;
+            return Promise.reject(new Error('ECONNRESET'));
+        }
+        return realFetch(u, o);
+    };
+    try {
+        const it = fake('add');
+        const done = c.handle(it);
+        while (!it.replies.length) await new Promise(r => setTimeout(r, 10));
+        while (failOnce) await new Promise(r => setTimeout(r, 10));
+        const redirect = new URL(new URL(it.replies[0].components[0].components[0].url).searchParams.get('redirectURL'));
+        await realFetch(`${base}${redirect.pathname}?token=retry`);
+        await done;
+        assert.match(it.replies.at(-1).content, /^Added \*\*bob\*\* `u-retry`/);
+    } finally {
+        globalThis.fetch = realFetch;
+    }
+});

@@ -118,7 +118,7 @@ Both commands need Manage Server by default (change that under Server Settings >
 | Env | Default | |
 | --- | --- | --- |
 | `PPROXY_URL` | `http://127.0.0.1:9032` | Where the bot reaches pproxy |
-| `PPROXY_PUBLIC_URL` | same as `PPROXY_URL` | Where Puter sends the browser back after sign-in. Set this if the people signing in can't reach `PPROXY_URL` |
+| `PPROXY_PUBLIC_URL` | same as `PPROXY_URL` | Where Puter sends the browser back after sign-in. Set this if the people signing in can't reach `PPROXY_URL`. pproxy rejects non-local `Host` headers while bound to `127.0.0.1`, so behind a reverse proxy either have it send `Host: localhost` or bind pproxy to another interface with an API key |
 | `DISCORD_ALLOWED_USERS` | anyone with the permission | Comma-separated Discord user ids |
 | `DISCORD_GUILD_ID` | global | Register commands in one server (shows up instantly; global can take a while) |
 
