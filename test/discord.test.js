@@ -137,6 +137,10 @@ test('describeUsage totals credit across accounts', () => {
     assert.match(text, /^`█{9}░{11}` 46% used$/m);
     assert.match(text, /\*\*2,300\*\* of \*\*5,000\*\* credits used, 2,700 left across 5 accounts/);
     assert.match(text, /1 account with unknown usage not counted/);
+
+    const extra = describeUsage([acct(1000, 0), acct(1000, 1500)]);
+    assert.match(extra, /50% used/);
+    assert.match(extra, /\*\*1,000\*\* of \*\*2,000\*\* credits used, 1,500 left across 2 accounts/);
 });
 
 test('/usage replies with the meter', async () => {

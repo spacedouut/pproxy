@@ -52,15 +52,16 @@ export function describeUsage (accounts) {
             unknown++;
             continue;
         }
-        const t = totals.get(u.unit) ?? { allowance: 0, remaining: 0, count: 0 };
+        const t = totals.get(u.unit) ?? { allowance: 0, remaining: 0, used: 0, count: 0 };
         t.allowance += u.allowance;
         t.remaining += Math.max(0, u.remaining);
+        t.used += Math.max(0, u.allowance - Math.max(0, u.remaining));
         t.count++;
         totals.set(u.unit, t);
     }
     const lines = [];
     for (const [unit, t] of totals) {
-        const used = Math.max(0, t.allowance - t.remaining);
+        const used = t.used;
         const pct = t.allowance ? Math.round((used / t.allowance) * 100) : 0;
         const label = unit === 'microcents' ? '' : ` ${unit}`;
         lines.push(`\`${meter(t.allowance ? used / t.allowance : 0)}\` ${pct}% used`);
