@@ -69,7 +69,7 @@ async function api (method, path, body) {
     return data;
 }
 
-const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? `$${(v / 1e8).toFixed(2)}` : `${Math.round(v * 10) / 10}`;
+const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? `$${(v / 1e8).toFixed(2)}` : `${v > 0 && v < 1 ? v.toPrecision(2) : Math.round(v * 10) / 10}`;
 
 function readPid () {
     try {

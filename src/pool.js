@@ -161,6 +161,16 @@ export class Pool {
         return a.usage;
     }
 
+    refreshSoon (a) {
+        const rt = this.rt(a);
+        if (rt.refreshPending) return;
+        rt.refreshPending = setTimeout(() => {
+            rt.refreshPending = null;
+            this.refreshUsage(a);
+        }, 5000);
+        rt.refreshPending.unref?.();
+    }
+
     async refreshAll () {
         await Promise.allSettled(this.accounts.map(a => this.refreshUsage(a)));
     }
@@ -268,7 +278,9 @@ export class Pool {
                 a.stats.inputTokens += u.input + u.cacheRead + u.cacheWrite;
                 a.stats.outputTokens += u.output;
                 a.stats.cost += u.cost;
-                if (a.usage?.remaining != null) a.usage.remaining -= u.cost;
+                // Per-request cost is in microcents; only subtract when the balance uses the same unit.
+                if (a.usage?.remaining != null && a.usage.unit === 'microcents') a.usage.remaining -= u.cost;
+                else this.refreshSoon(a);
             } else if (c?.type === 'error') {
                 this.noteError(a, toPuterError(c));
             }

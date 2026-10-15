@@ -154,7 +154,7 @@ td.trunc { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; }
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? '$' + (v / 1e8).toFixed(2) : (Math.round(v * 10) / 10).toLocaleString();
+const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? '$' + (v / 1e8).toFixed(2) : (v > 0 && v < 1 ? v.toPrecision(2) : (Math.round(v * 10) / 10).toLocaleString());
 const compact = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
 const ago = (t) => { if (!t) return 'never'; const s = (Date.now() - t) / 1000; return s < 60 ? Math.round(s) + 's ago' : s < 3600 ? Math.round(s / 60) + 'm ago' : Math.round(s / 3600) + 'h ago'; };
 const base = location.origin;
