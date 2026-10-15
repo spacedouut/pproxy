@@ -62,6 +62,10 @@ function readBody (req) {
     });
 }
 
+function escapeHtml (s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
 function json (res, status, body) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -158,7 +162,8 @@ export function createServer (overrides = {}) {
             }
             entry.status = entry.error ? 502 : 200;
         } catch (e) {
-            const status = e.status && e.status >= 400 && e.status < 600 ? e.status : (e instanceof SyntaxError ? 400 : 502);
+            let status = e.status && e.status >= 400 && e.status < 600 ? e.status : (e instanceof SyntaxError ? 400 : 502);
+            if (status === 502 && /model not found/i.test(e.message)) status = 404;
             entry.status = e.status === 499 ? 499 : status;
             entry.error = e.message;
             if (!headersSent) json(res, status, errorBody(status, e.message, e.code));
@@ -184,11 +189,13 @@ export function createServer (overrides = {}) {
 
     async function finishLink (state, token, res) {
         const link = links.get(state);
-        const page = (title, msg) => {
+        const page = (rawTitle, rawMsg) => {
+            const title = escapeHtml(rawTitle);
+            const msg = escapeHtml(rawMsg);
             res.writeHead(link ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8' });
             res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title>
 <style>body{background:#000;color:#eee;font:16px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0}main{max-width:28rem;padding:2rem}h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#aaa;margin:0}</style>
-<main><h1>${title}</h1><p>${msg}</p></main>`);
+<main><h1>${title}</h1><p>${msg}</p></main><script>history.replaceState(null, '', location.pathname)</script>`);
         };
         if (!link || link.status !== 'pending') return page('Link expired', 'Start again from pproxy.');
         if (!token) {

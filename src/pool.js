@@ -145,6 +145,7 @@ export class Pool {
             a.usage = {
                 allowance: info.monthUsageAllowance ?? null,
                 remaining: info.remaining ?? null,
+                unit: info.unit ?? 'microcents',
                 updatedAt: Date.now(),
             };
             if (a.status !== 'auth_error') {

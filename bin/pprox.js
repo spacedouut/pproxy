@@ -69,7 +69,7 @@ async function api (method, path, body) {
     return data;
 }
 
-const dollars = (micro) => micro == null ? '?' : `$${(micro / 1e8).toFixed(2)}`;
+const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? `$${(v / 1e8).toFixed(2)}` : `${Math.round(v * 10) / 10}`;
 
 function readPid () {
     try {
@@ -151,7 +151,8 @@ async function listAccounts () {
     const list = await api('GET', '/api/accounts');
     if (!list.length) return console.log('no accounts yet. Add one with `pprox accounts add`.');
     for (const a of list) {
-        const remaining = a.usage ? `${dollars(a.usage.remaining)} of ${dollars(a.usage.allowance)} left` : 'usage unknown';
+        const u = a.usage;
+        const remaining = u ? `${credit(u.remaining, u.unit)} of ${credit(u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ` ${u.unit}` : ''} left` : 'usage unknown';
         const flagsTxt = [!a.enabled && 'disabled', a.status !== 'ok' && a.status].filter(Boolean).join(', ');
         console.log(`${a.username.padEnd(20)} ${a.id}  ${remaining}  ${a.stats.requests} req${flagsTxt ? `  [${flagsTxt}]` : ''}`);
     }
