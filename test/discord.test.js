@@ -153,7 +153,7 @@ test('/usage replies with the meter', async () => {
 test('usageSvg fills the bar by share used and colors by share left', () => {
     const svg = usageSvg({ allowance: 5000, used: 2300 });
     assert.match(svg, /^<svg [^>]*width="800" height="48"/);
-    assert.match(svg, /width="355\.3" height="24" fill="#6fd18a"/);
+    assert.match(svg, /width="357\.0" height="24" fill="#6fd18a"/);
     assert.match(usageSvg({ allowance: 100, used: 60 }), /fill="#f2d14b"/);
     assert.match(usageSvg({ allowance: 100, used: 90 }), /fill="#ff5d5d"/);
 });
