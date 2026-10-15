@@ -19,6 +19,12 @@ export const DEFINITIONS = [
         }],
     },
     {
+        name: 'usage',
+        description: 'Credit used and left across all pproxy accounts',
+        default_member_permissions: MANAGE_GUILD,
+        contexts: [0],
+    },
+    {
         name: 'accounts',
         description: 'List pproxy accounts and their credit',
         default_member_permissions: MANAGE_GUILD,
@@ -27,6 +33,42 @@ export const DEFINITIONS = [
 ];
 
 const credit = (v, unit) => v == null ? '?' : unit === 'microcents' ? `$${(v / 1e8).toFixed(2)}` : `${v > 0 && v < 1 ? v.toPrecision(2) : Math.round(v * 10) / 10}`;
+
+const amount = (v, unit) => unit === 'microcents' ? credit(v, unit) : Number(credit(v, unit)).toLocaleString('en-US');
+
+export function meter (fraction, width = 20) {
+    const f = Math.min(1, Math.max(0, fraction));
+    const full = Math.round(f * width);
+    return `${'█'.repeat(full)}${'░'.repeat(width - full)}`;
+}
+
+// One meter per credit unit, in case accounts report different units.
+export function describeUsage (accounts) {
+    const totals = new Map();
+    let unknown = 0;
+    for (const a of accounts) {
+        const u = a.usage;
+        if (u?.allowance == null || u.remaining == null) {
+            unknown++;
+            continue;
+        }
+        const t = totals.get(u.unit) ?? { allowance: 0, remaining: 0, count: 0 };
+        t.allowance += u.allowance;
+        t.remaining += Math.max(0, u.remaining);
+        t.count++;
+        totals.set(u.unit, t);
+    }
+    const lines = [];
+    for (const [unit, t] of totals) {
+        const used = Math.max(0, t.allowance - t.remaining);
+        const pct = t.allowance ? Math.round((used / t.allowance) * 100) : 0;
+        const label = unit === 'microcents' ? '' : ` ${unit}`;
+        lines.push(`\`${meter(t.allowance ? used / t.allowance : 0)}\` ${pct}% used`);
+        lines.push(`**${amount(used, unit)}** of **${amount(t.allowance, unit)}**${label} used, ${amount(t.remaining, unit)} left across ${t.count} account${t.count === 1 ? '' : 's'}`);
+    }
+    if (unknown) lines.push(`${unknown} account${unknown === 1 ? '' : 's'} with unknown usage not counted`);
+    return lines.join('\n');
+}
 
 export function describeAccount (a) {
     const u = a.usage;
@@ -94,7 +136,12 @@ export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers 
         return interaction.editReply(lines.join('\n'));
     }
 
-    const handlers = { add, accounts };
+    async function usage (interaction) {
+        const { data = [] } = await manage('GET', '/accounts');
+        return interaction.editReply(data.length ? describeUsage(data) : 'No accounts yet. Add one with `/add`.');
+    }
+
+    const handlers = { add, accounts, usage };
 
     async function handle (raw) {
         const run = handlers[raw.commandName];

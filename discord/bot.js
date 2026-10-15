@@ -25,7 +25,7 @@ client.once(Events.ClientReady, async (c) => {
         ? Routes.applicationGuildCommands(c.application.id, env.DISCORD_GUILD_ID)
         : Routes.applicationCommands(c.application.id);
     await rest.put(route, { body: DEFINITIONS });
-    console.log(`logged in as ${c.user.tag}, registered /add and /accounts${env.DISCORD_GUILD_ID ? ` in guild ${env.DISCORD_GUILD_ID}` : ' globally'}`);
+    console.log(`logged in as ${c.user.tag}, registered /add, /usage and /accounts${env.DISCORD_GUILD_ID ? ` in guild ${env.DISCORD_GUILD_ID}` : ' globally'}`);
 });
 
 client.on(Events.InteractionCreate, (interaction) => {

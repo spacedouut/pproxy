@@ -7,7 +7,7 @@ import path from 'node:path';
 process.env.PPROXY_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'pproxy-discord-'));
 process.env.PPROXY_MASTER_KEY = 'mk';
 const { createServer } = await import('../src/server.js');
-const { createCommands, DEFINITIONS } = await import('../discord/commands.js');
+const { createCommands, DEFINITIONS, describeUsage } = await import('../discord/commands.js');
 
 let app;
 let base;
@@ -43,8 +43,8 @@ function fake (commandName, opts = {}, userId = 'u1') {
     return it;
 }
 
-test('definitions are /add and /accounts', () => {
-    assert.deepEqual(DEFINITIONS.map(d => d.name), ['add', 'accounts']);
+test('definitions are /add, /usage and /accounts', () => {
+    assert.deepEqual(DEFINITIONS.map(d => d.name), ['add', 'usage', 'accounts']);
 });
 
 test('/add with a token adds the account', async () => {
@@ -129,4 +129,19 @@ test('/add keeps polling through a failed poll', async () => {
     } finally {
         globalThis.fetch = realFetch;
     }
+});
+
+test('describeUsage totals credit across accounts', () => {
+    const acct = (allowance, remaining, unit = 'credits') => ({ usage: { allowance, remaining, unit } });
+    const text = describeUsage([acct(1000, 500), acct(1000, 0), acct(1000, 1000), acct(1000, 700), acct(1000, 500), { usage: null }]);
+    assert.match(text, /^`█{9}░{11}` 46% used$/m);
+    assert.match(text, /\*\*2,300\*\* of \*\*5,000\*\* credits used, 2,700 left across 5 accounts/);
+    assert.match(text, /1 account with unknown usage not counted/);
+});
+
+test('/usage replies with the meter', async () => {
+    const it = fake('usage');
+    await createCommands({ pproxyUrl: base, masterKey: 'mk' }).handle(it);
+    assert.match(it.replies.at(-1).content, /% used/);
+    assert.match(it.replies.at(-1).content, /credits used, .* left across \d+ account/);
 });
