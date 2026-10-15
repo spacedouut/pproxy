@@ -68,6 +68,36 @@ pprox models [filter]
 
 `--headless` prints the sign-in link instead of opening a browser. If the machine you sign in on can't reach the server, copy the `token=` value from the page Puter redirects to and pass it to `--token`.
 
+## Management API
+
+A small HTTP API for scripting the pool. It is off until you set a master key:
+
+```sh
+pprox manage key            # prints the key, creating one if needed (--rotate for a new one)
+# or: PPROXY_MASTER_KEY=... pprox serve
+```
+
+Send the key as `Authorization: Bearer <key>` or `x-master-key: <key>`. The client API key is not accepted here.
+
+| Action | Body |
+| --- | --- |
+| `POST /manage/v1/add-account` | `{"token": "..."}`, or `{}` to get a Puter sign-in `url` back |
+| `POST /manage/v1/remove-account` | `{"account": "<id or username>"}` |
+| `POST /manage/v1/change-weight` | `{"account": "...", "weight": 3}` |
+| `POST /manage/v1/enable-account` / `disable-account` | `{"account": "..."}` |
+| `POST /manage/v1/set-strategy` | `{"strategy": "most-remaining"}` |
+| `POST /manage/v1/refresh-usage` | `{"account": "..."}` or `{}` for all |
+
+Every action returns a request record and an `X-Request-Id` header:
+
+```json
+{"request_id": "req_...", "action": "change-weight", "status": "succeeded", "result": {...}, "error": null}
+```
+
+`status` is `pending`, `succeeded` or `failed`; on failure `error` has `message` and `status`, and the HTTP status matches. Add `"async": true` (or `?async=1`) to get a `202` right away and poll instead. `add-account` without a token stays `pending` until someone finishes signing in through the returned `url`.
+
+Reads: `GET /manage/v1/request?id=req_...` (or `/manage/v1/request/req_...`), `GET /manage/v1/requests?limit=50`, `GET /manage/v1/accounts`. The last 1000 requests are kept in memory.
+
 ## Model aliases
 
 Clients often hardcode model names. Map them in the UI or with `pprox config modelMap '{"claude-*":"claude-sonnet-4-6","fast":"gpt-5.4-nano"}'`. `*` matches anything. Requests with no model use `defaultModel`.

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -22,9 +23,10 @@ usage:
   pprox strategy [name]                                 show or set routing strategy
   pprox config [key] [value]                            show or set a setting
   pprox models [filter]                                 list Puter models
+  pprox manage key [--rotate]                           create or show the management API master key
   pprox logs [-f]                                       print the background server log
 
-env: PPROXY_HOME (default ~/.pproxy), PPROXY_URL (default from settings)`;
+env: PPROXY_HOME (default ~/.pproxy), PPROXY_URL (default from settings), PPROXY_MASTER_KEY`;
 
 const { values: flags, positionals } = parseArgs({
     allowPositionals: true,
@@ -36,6 +38,7 @@ const { values: flags, positionals } = parseArgs({
         headless: { type: 'boolean' },
         token: { type: 'string' },
         follow: { type: 'boolean', short: 'f' },
+        rotate: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
     },
 });
@@ -238,11 +241,11 @@ async function main () {
     case 'config': {
         const local = loadSettings();
         if (!sub) {
-            const shown = { ...local, apiKey: local.apiKey ? '(set)' : null };
+            const shown = { ...local, apiKey: local.apiKey ? '(set)' : null, masterKey: local.masterKey ? '(set)' : null };
             return console.log(JSON.stringify(shown, null, 2));
         }
         if (!(sub in DEFAULT_SETTINGS)) die(`unknown setting "${sub}"`);
-        if (rest[0] === undefined) return console.log(JSON.stringify(sub === 'apiKey' && local.apiKey ? '(set)' : local[sub]));
+        if (rest[0] === undefined) return console.log(JSON.stringify(['apiKey', 'masterKey'].includes(sub) && local[sub] ? '(set)' : local[sub]));
         let value = rest.join(' ');
         try { value = JSON.parse(value); } catch { /* plain string */ }
         if (value === 'null' || value === '') value = null;
@@ -265,6 +268,16 @@ async function main () {
             console.log(`${m.id.padEnd(48)} ${m.provider ?? ''}`);
         }
         return;
+    }
+    case 'manage': {
+        if (sub !== 'key') die('usage: pprox manage key [--rotate]');
+        const local = loadSettings();
+        if (local.masterKey && !flags.rotate) return console.log(local.masterKey);
+        const key = `pmk_${crypto.randomBytes(24).toString('base64url')}`;
+        saveSettings({ ...local, masterKey: key });
+        if (readPid()) await api('PATCH', '/api/settings', { masterKey: key });
+        console.log(key);
+        return console.error('send it as `Authorization: Bearer <key>` or `x-master-key` to /manage/v1/*');
     }
     case 'logs': {
         if (!fs.existsSync(PATHS.log)) return console.log('no log yet');

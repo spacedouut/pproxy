@@ -9,6 +9,7 @@ import { HttpError } from './formats/common.js';
 import * as chat from './formats/chat.js';
 import * as anthropic from './formats/anthropic.js';
 import * as responses from './formats/responses.js';
+import { createManager } from './manage.js';
 
 const UI_FILE = fileURLToPath(new URL('../public/index.html', import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url))).version;
@@ -102,6 +103,7 @@ export function createServer (overrides = {}) {
         modelMap: settings.modelMap,
         usageRefreshSec: settings.usageRefreshSec,
         apiKeySet: !!settings.apiKey,
+        masterKeySet: !!(process.env.PPROXY_MASTER_KEY || settings.masterKey),
     });
 
     async function models () {
@@ -176,14 +178,14 @@ export function createServer (overrides = {}) {
 
     // ---- account linking -------------------------------------------------
 
-    function startLink (base) {
+    function startLink (base, onDone) {
         for (const [k, v] of links) if (Date.now() - v.created > LINK_TTL_MS) links.delete(k);
         const state = crypto.randomUUID();
         const redirect = `${base.replace(/\/$/, '')}/auth/callback/${state}`;
         const url = new URL(PUTER_GUI);
         url.searchParams.set('action', 'authme');
         url.searchParams.set('redirectURL', redirect);
-        links.set(state, { created: Date.now(), status: 'pending' });
+        links.set(state, { created: Date.now(), status: 'pending', onDone });
         return { state, url: url.toString() };
     }
 
@@ -201,14 +203,17 @@ export function createServer (overrides = {}) {
         if (!token) {
             link.status = 'error';
             link.error = 'Puter did not return a token';
+            link.onDone?.(new Error(link.error));
             return page('Sign-in failed', 'Puter did not return a token. Start again from pproxy.');
         }
         try {
             const account = await pool.addToken(token);
             Object.assign(link, { status: 'done', account });
+            link.onDone?.(null, account);
             page(`Added ${account.username}`, 'You can close this tab.');
         } catch (e) {
             Object.assign(link, { status: 'error', error: e.message });
+            link.onDone?.(e);
             page('Could not add account', e.message);
         }
     }
@@ -246,6 +251,7 @@ export function createServer (overrides = {}) {
             return finishLink(p.slice('/auth/callback/'.length), url.searchParams.get('token'), res);
         }
         if (p === '/health') return json(res, 200, { ok: true });
+        if (await manager.handle(req, res, { p, method, url, readBody, json })) return;
 
         const fmtFor = (req.headers['anthropic-version'] || req.headers['x-api-key'] && !req.headers.authorization) ? 'anthropic' : 'chat';
         if (!authorized(req)) {
@@ -332,6 +338,7 @@ export function createServer (overrides = {}) {
                 if (typeof body.defaultModel === 'string' && body.defaultModel) settings.defaultModel = body.defaultModel;
                 if (body.modelMap && typeof body.modelMap === 'object') settings.modelMap = body.modelMap;
                 if (body.apiKey !== undefined) settings.apiKey = body.apiKey || null;
+                if (body.masterKey !== undefined) settings.masterKey = body.masterKey || null;
                 if (Number.isFinite(body.usageRefreshSec)) settings.usageRefreshSec = body.usageRefreshSec;
                 persist();
                 return json(res, 200, publicSettings());
@@ -342,6 +349,8 @@ export function createServer (overrides = {}) {
 
         return json(res, 404, FORMATS[fmtFor].errorBody(404, `no route for ${method} ${p}`));
     }
+
+    const manager = createManager({ pool, settings, persist, startLink });
 
     const server = http.createServer((req, res) => {
         handle(req, res).catch((e) => {
