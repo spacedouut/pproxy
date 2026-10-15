@@ -1,0 +1,27 @@
+{
+  "name": "pproxy",
+  "version": "0.1.0",
+  "description": "Pool your Puter accounts behind OpenAI and Anthropic compatible endpoints",
+  "type": "module",
+  "bin": {
+    "pprox": "bin/pprox.js"
+  },
+  "main": "src/server.js",
+  "files": [
+    "bin/",
+    "src/",
+    "public/"
+  ],
+  "scripts": {
+    "start": "node bin/pprox.js serve",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@heyputer/puter.js": "^2.6.4",
+    "open": "^10.1.0"
+  },
+  "license": "MIT"
+}
