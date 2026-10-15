@@ -111,7 +111,7 @@ Commands (replies are only visible to whoever ran them):
 
 - `/add` sends a Puter sign-in button and updates the message once the account is added.
 - `/add token:<token>` adds an account straight from a Puter token.
-- `/usage` shows a meter of credit used and left across all accounts.
+- `/usage` shows a bar image of credit used and left across all accounts.
 - `/accounts` lists accounts and their remaining credit.
 
 All commands need Manage Server by default (change that under Server Settings > Integrations). Other settings:

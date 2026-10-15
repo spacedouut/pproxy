@@ -42,8 +42,8 @@ export function meter (fraction, width = 20) {
     return `${'█'.repeat(full)}${'░'.repeat(width - full)}`;
 }
 
-// One meter per credit unit, in case accounts report different units.
-export function describeUsage (accounts) {
+// Totals per credit unit, in case accounts report different units.
+export function usageTotals (accounts) {
     const totals = new Map();
     let unknown = 0;
     for (const a of accounts) {
@@ -59,13 +59,34 @@ export function describeUsage (accounts) {
         t.count++;
         totals.set(u.unit, t);
     }
+    return { totals, unknown };
+}
+
+// Same thresholds as the dashboard: green over 50% left, yellow 20-50%, red under 20%.
+const fillColor = (left) => left > 0.5 ? '#6fd18a' : left >= 0.2 ? '#f2d14b' : '#ff5d5d';
+
+export function usageSvg ({ allowance, used }, { width = 800, height = 48 } = {}) {
+    const f = allowance ? Math.min(1, Math.max(0, used / allowance)) : 0;
+    const pad = 12;
+    const w = width - pad * 2;
+    const h = height - pad * 2;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`
+        + `<rect width="${width}" height="${height}" rx="10" fill="#0b0b0b"/>`
+        + `<clipPath id="t"><rect x="${pad}" y="${pad}" width="${w}" height="${h}" rx="${h / 2}"/></clipPath>`
+        + `<g clip-path="url(#t)"><rect x="${pad}" y="${pad}" width="${w}" height="${h}" fill="#1f1f1f"/>`
+        + `<rect x="${pad}" y="${pad}" width="${(w * f).toFixed(1)}" height="${h}" fill="${fillColor(1 - f)}"/></g></svg>`;
+}
+
+// With meter: false the unicode bar is left out (the image replaces it).
+export function describeUsage (accounts, { meter: withMeter = true } = {}) {
+    const { totals, unknown } = usageTotals(accounts);
     const lines = [];
     for (const [unit, t] of totals) {
         const used = t.used;
         const pct = t.allowance ? Math.round((used / t.allowance) * 100) : 0;
         const label = unit === 'microcents' ? '' : ` ${unit}`;
-        lines.push(`\`${meter(t.allowance ? used / t.allowance : 0)}\` ${pct}% used`);
-        lines.push(`**${amount(used, unit)}** of **${amount(t.allowance, unit)}**${label} used, ${amount(t.remaining, unit)} left across ${t.count} account${t.count === 1 ? '' : 's'}`);
+        if (withMeter) lines.push(`\`${meter(t.allowance ? used / t.allowance : 0)}\` ${pct}% used`);
+        lines.push(`${withMeter ? '' : `${pct}% used: `}**${amount(used, unit)}** of **${amount(t.allowance, unit)}**${label} used, ${amount(t.remaining, unit)} left across ${t.count} account${t.count === 1 ? '' : 's'}`);
     }
     if (unknown) lines.push(`${unknown} account${unknown === 1 ? '' : 's'} with unknown usage not counted`);
     return lines.join('\n');
@@ -78,7 +99,7 @@ export function describeAccount (a) {
     return `**${a.username}** \`${a.id}\` ${left}${flags ? ` [${flags}]` : ''}`;
 }
 
-export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers = [], pollMs = 3000, timeoutMs = 14 * 60 * 1000 }) {
+export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers = [], renderPng, pollMs = 3000, timeoutMs = 14 * 60 * 1000 }) {
     const base = pproxyUrl.replace(/\/$/, '');
 
     async function manage (method, path, body) {
@@ -139,7 +160,11 @@ export function createCommands ({ pproxyUrl, masterKey, publicUrl, allowedUsers 
 
     async function usage (interaction) {
         const { data = [] } = await manage('GET', '/accounts');
-        return interaction.editReply(data.length ? describeUsage(data) : 'No accounts yet. Add one with `/add`.');
+        if (!data.length) return interaction.editReply('No accounts yet. Add one with `/add`.');
+        const { totals } = usageTotals(data);
+        if (!renderPng || !totals.size) return interaction.editReply(describeUsage(data));
+        const files = [...totals.values()].map((t, i) => ({ attachment: renderPng(usageSvg(t)), name: `usage${i || ''}.png` }));
+        return interaction.editReply({ content: describeUsage(data, { meter: false }), files });
     }
 
     const handlers = { add, accounts, usage };

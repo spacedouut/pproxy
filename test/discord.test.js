@@ -7,7 +7,7 @@ import path from 'node:path';
 process.env.PPROXY_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'pproxy-discord-'));
 process.env.PPROXY_MASTER_KEY = 'mk';
 const { createServer } = await import('../src/server.js');
-const { createCommands, DEFINITIONS, describeUsage } = await import('../discord/commands.js');
+const { createCommands, DEFINITIONS, describeUsage, usageSvg } = await import('../discord/commands.js');
 
 let app;
 let base;
@@ -148,4 +148,23 @@ test('/usage replies with the meter', async () => {
     await createCommands({ pproxyUrl: base, masterKey: 'mk' }).handle(it);
     assert.match(it.replies.at(-1).content, /% used/);
     assert.match(it.replies.at(-1).content, /credits used, .* left across \d+ account/);
+});
+
+test('usageSvg fills the bar by share used and colors by share left', () => {
+    const svg = usageSvg({ allowance: 5000, used: 2300 });
+    assert.match(svg, /^<svg [^>]*width="800" height="48"/);
+    assert.match(svg, /width="355\.3" height="24" fill="#6fd18a"/);
+    assert.match(usageSvg({ allowance: 100, used: 60 }), /fill="#f2d14b"/);
+    assert.match(usageSvg({ allowance: 100, used: 90 }), /fill="#ff5d5d"/);
+});
+
+test('/usage attaches the rendered bar when a renderer is set', async () => {
+    const svgs = [];
+    const it = fake('usage');
+    await createCommands({ pproxyUrl: base, masterKey: 'mk', renderPng: (svg) => { svgs.push(svg); return Buffer.from('png'); } }).handle(it);
+    const last = it.replies.at(-1);
+    assert.equal(svgs.length, 1);
+    assert.equal(last.files[0].name, 'usage.png');
+    assert.doesNotMatch(last.content, /█/);
+    assert.match(last.content, /^\d+% used: \*\*/);
 });
