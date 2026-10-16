@@ -7,7 +7,7 @@ import path from 'node:path';
 process.env.PPROXY_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'pproxy-discord-'));
 process.env.PPROXY_MASTER_KEY = 'mk';
 const { createServer } = await import('../src/server.js');
-const { createCommands, DEFINITIONS, describeUsage, usageSvg } = await import('../discord/commands.js');
+const { createCommands, DEFINITIONS, describeAccount, describeUsage, usageSvg } = await import('../discord/commands.js');
 
 let app;
 let base;
@@ -141,6 +141,12 @@ test('describeUsage totals credit across accounts', () => {
     const extra = describeUsage([acct(1000, 0), acct(1000, 1500)]);
     assert.match(extra, /50% used/);
     assert.match(extra, /\*\*1,000\*\* of \*\*2,000\*\* credits used, 1,500 left across 2 accounts/);
+});
+
+test('describeUsage counts addon credit toward the max', () => {
+    const text = describeUsage([{ usage: { allowance: 1000, remaining: 900, addons: 400, max: 1500, unit: 'credits' } }, { usage: { allowance: 1000, remaining: 500, unit: 'credits' } }]);
+    assert.match(text, /\*\*1,100\*\* of \*\*2,500\*\* credits used, 1,400 left across 2 accounts \(400 addon\)/);
+    assert.match(describeAccount({ username: 'bob', id: 'u1', enabled: true, status: 'ok', usage: { allowance: 1000, remaining: 900, addons: 400, max: 1500, unit: 'credits' } }), /900 of 1500 credits left \(400 addon\)/);
 });
 
 test('/usage replies with the meter', async () => {

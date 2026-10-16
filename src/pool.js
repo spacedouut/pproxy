@@ -16,6 +16,29 @@ function blankStats () {
     return { requests: 0, errors: 0, inputTokens: 0, outputTokens: 0, cost: 0 };
 }
 
+// `remaining` already counts addon credit (spent only after the monthly allowance).
+// `max` is the bar's full mark: allowance plus the addon balance, held still while
+// addon credit is spent. It resets when the addon balance runs out or grows, the
+// plan changes, or the UTC month (Puter's metering period) rolls over.
+export function nextUsage (prev, info, now = new Date()) {
+    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const allowance = info.monthUsageAllowance ?? null;
+    const remaining = info.remaining ?? null;
+    const ad = info.addons;
+    const addons = ad ? Math.max(0, (ad.purchasedCredits || 0) - (ad.consumedPurchaseCredits || 0)) : 0;
+    let max = prev?.max ?? null;
+    let maxAddons = prev?.maxAddons ?? 0;
+    if (allowance == null) {
+        max = null;
+        maxAddons = 0;
+    } else if (max == null || addons === 0 || addons > maxAddons || allowance !== prev.allowance
+        || month !== prev.month || (remaining ?? 0) > max) {
+        max = allowance + addons;
+        maxAddons = addons;
+    }
+    return { allowance, remaining, addons, max, maxAddons, month, unit: info.unit ?? 'microcents', updatedAt: now.getTime() };
+}
+
 export class Pool {
     constructor (settings) {
         this.settings = settings;
@@ -141,13 +164,7 @@ export class Pool {
     async refreshUsage (a) {
         try {
             const u = await this.rt(a).puter.auth.getMonthlyUsage();
-            const info = u?.allowanceInfo ?? {};
-            a.usage = {
-                allowance: info.monthUsageAllowance ?? null,
-                remaining: info.remaining ?? null,
-                unit: info.unit ?? 'microcents',
-                updatedAt: Date.now(),
-            };
+            a.usage = nextUsage(a.usage, u?.allowanceInfo ?? {});
             if (a.status !== 'auth_error') {
                 a.status = a.usage.remaining !== null && a.usage.remaining <= 0 ? 'exhausted' : 'ok';
             }

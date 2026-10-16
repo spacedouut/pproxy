@@ -52,10 +52,12 @@ export function usageTotals (accounts) {
             unknown++;
             continue;
         }
-        const t = totals.get(u.unit) ?? { allowance: 0, remaining: 0, used: 0, count: 0 };
-        t.allowance += u.allowance;
+        const cap = u.max ?? u.allowance;
+        const t = totals.get(u.unit) ?? { allowance: 0, remaining: 0, used: 0, addons: 0, count: 0 };
+        t.allowance += cap;
         t.remaining += Math.max(0, u.remaining);
-        t.used += Math.max(0, u.allowance - Math.max(0, u.remaining));
+        t.used += Math.max(0, cap - Math.max(0, u.remaining));
+        t.addons += u.addons ?? 0;
         t.count++;
         totals.set(u.unit, t);
     }
@@ -86,7 +88,7 @@ export function describeUsage (accounts, { meter: withMeter = true } = {}) {
         const pct = t.allowance ? Math.round((used / t.allowance) * 100) : 0;
         const label = unit === 'microcents' ? '' : ` ${unit}`;
         if (withMeter) lines.push(`\`${meter(t.allowance ? used / t.allowance : 0)}\` ${pct}% used`);
-        lines.push(`${withMeter ? '' : `${pct}% used: `}**${amount(used, unit)}** of **${amount(t.allowance, unit)}**${label} used, ${amount(t.remaining, unit)} left across ${t.count} account${t.count === 1 ? '' : 's'}`);
+        lines.push(`${withMeter ? '' : `${pct}% used: `}**${amount(used, unit)}** of **${amount(t.allowance, unit)}**${label} used, ${amount(t.remaining, unit)} left across ${t.count} account${t.count === 1 ? '' : 's'}${t.addons ? ` (${amount(t.addons, unit)} addon)` : ''}`);
     }
     if (unknown) lines.push(`${unknown} account${unknown === 1 ? '' : 's'} with unknown usage not counted`);
     return lines.join('\n');
@@ -94,7 +96,7 @@ export function describeUsage (accounts, { meter: withMeter = true } = {}) {
 
 export function describeAccount (a) {
     const u = a.usage;
-    const left = u ? `${credit(u.remaining, u.unit)} of ${credit(u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ` ${u.unit}` : ''} left` : 'usage unknown';
+    const left = u ? `${credit(u.remaining, u.unit)} of ${credit(u.max ?? u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ` ${u.unit}` : ''} left${u.addons ? ` (${credit(u.addons, u.unit)} addon)` : ''}` : 'usage unknown';
     const flags = [!a.enabled && 'disabled', a.status && a.status !== 'ok' && a.status].filter(Boolean).join(', ');
     return `**${a.username}** \`${a.id}\` ${left}${flags ? ` [${flags}]` : ''}`;
 }

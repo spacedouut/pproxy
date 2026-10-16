@@ -191,17 +191,18 @@ function renderAccounts (list) {
         el.innerHTML = `<div class="empty"><p>No accounts yet. Each Puter account you sign in with adds its monthly credit to the pool.</p><p>Point any OpenAI or Anthropic client at <b>${esc(base)}/v1</b> once one is added.</p></div>`;
         return;
     }
-    el.innerHTML = `<div class="cols"><span></span><span>account</span><span>monthly credit</span><span class="r">requests</span><span class="r">tokens</span><span class="r">weight</span><span></span></div>` + list.map(a => {
+    el.innerHTML = `<div class="cols"><span></span><span>account</span><span>credit</span><span class="r">requests</span><span class="r">tokens</span><span class="r">weight</span><span></span></div>` + list.map(a => {
         const u = a.usage;
-        const pct = u && u.allowance ? Math.max(0, Math.min(100, 100 * u.remaining / u.allowance)) : 0;
-        const level = !u || !u.allowance ? '' : pct > 50 ? 'ok' : pct >= 20 ? 'warn' : 'low';
+        const cap = u ? u.max ?? u.allowance : null;
+        const pct = cap ? Math.max(0, Math.min(100, 100 * u.remaining / cap)) : 0;
+        const level = !cap ? '' : pct > 50 ? 'ok' : pct >= 20 ? 'warn' : 'low';
         const dot = !a.enabled ? 'off' : a.status !== 'ok' ? 'bad' : a.inflight ? 'busy' : level;
         const title = !a.enabled ? 'disabled' : a.status !== 'ok' ? a.status : a.inflight ? a.inflight + ' in flight' : 'ready';
         return `<div class="acct ${a.enabled ? '' : 'off'}" data-id="${esc(a.id)}">
             <div class="dot ${dot}" title="${esc(title)}"></div>
             <div class="name">${esc(a.username)}<span class="id" title="Puter user id">${esc(a.id)}</span></div>
             <div><div class="bar ${level}"><i style="width:${pct}%"></i></div>
-                <div class="credit">${u ? `${credit(u.remaining, u.unit)} of ${credit(u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ' ' + esc(u.unit) : ''} left` : 'usage unknown'} · used ${ago(a.lastUsed)}</div></div>
+                <div class="credit">${u ? `${credit(u.remaining, u.unit)} of ${credit(cap, u.unit)}${u.unit && u.unit !== 'microcents' ? ' ' + esc(u.unit) : ''} left${u.addons ? ` (${credit(u.addons, u.unit)} addon)` : ''}` : 'usage unknown'} · used ${ago(a.lastUsed)}</div></div>
             <div class="num"><b>${a.stats.requests}</b>${a.stats.errors ? ` <span title="errors">/${a.stats.errors}</span>` : ''}</div>
             <div class="num">${a.stats.inputTokens + a.stats.outputTokens ? compact(a.stats.inputTokens + a.stats.outputTokens) : '—'}</div>
             <div class="num"><input class="weight" type="number" min="0" step="1" value="${a.weight}" title="Weight for the random strategy"></div>

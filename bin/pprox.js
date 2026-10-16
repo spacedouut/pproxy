@@ -155,7 +155,7 @@ async function listAccounts () {
     if (!list.length) return console.log('no accounts yet. Add one with `pprox accounts add`.');
     for (const a of list) {
         const u = a.usage;
-        const remaining = u ? `${credit(u.remaining, u.unit)} of ${credit(u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ` ${u.unit}` : ''} left` : 'usage unknown';
+        const remaining = u ? `${credit(u.remaining, u.unit)} of ${credit(u.max ?? u.allowance, u.unit)}${u.unit && u.unit !== 'microcents' ? ` ${u.unit}` : ''} left${u.addons ? ` (${credit(u.addons, u.unit)} addon)` : ''}` : 'usage unknown';
         const flagsTxt = [!a.enabled && 'disabled', a.status !== 'ok' && a.status].filter(Boolean).join(', ');
         console.log(`${a.username.padEnd(20)} ${a.id}  ${remaining}  ${a.stats.requests} req${flagsTxt ? `  [${flagsTxt}]` : ''}`);
     }
