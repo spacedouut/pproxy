@@ -44,11 +44,20 @@ test('nextUsage resets max when addon credit runs out or grows', () => {
 });
 
 test('nextUsage resets max on a month rollover or plan change', () => {
-    let u = nextUsage(null, info(1500, 500));
-    u = nextUsage(u, info(200, 500, 300));
+    const oct = new Date('2026-10-31T23:00:00Z');
+    const nov = new Date('2026-11-01T01:00:00Z');
+    let u = nextUsage(null, info(1500, 500), oct);
+    u = nextUsage(u, info(200, 500, 300), oct);
     assert.equal(u.max, 1500);
-    u = nextUsage(u, info(1200, 500, 300));
-    assert.equal(u.max, 1200);
-    u = nextUsage(u, info(4000, 500, 300, 5000));
-    assert.equal(u.max, 5200);
+    u = nextUsage(u, info(150, 500, 350), nov);
+    assert.equal(u.max, 1150);
+    u = nextUsage(u, info(4000, 500, 350, 5000), nov);
+    assert.equal(u.max, 5150);
+});
+
+test('nextUsage keeps max when a stale snapshot shows more remaining', () => {
+    let u = nextUsage(null, info(300, 500, 200));
+    u = { ...u, remaining: 250 };
+    u = nextUsage(u, info(300, 500, 200));
+    assert.equal(u.max, 1300);
 });

@@ -19,8 +19,9 @@ function blankStats () {
 // `remaining` already counts addon credit (spent only after the monthly allowance).
 // `max` is the bar's full mark: allowance plus the addon balance, held still while
 // addon credit is spent. It resets when the addon balance runs out or grows, the
-// plan changes, or the month rolls over.
-export function nextUsage (prev, info) {
+// plan changes, or the UTC month (Puter's metering period) rolls over.
+export function nextUsage (prev, info, now = new Date()) {
+    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
     const allowance = info.monthUsageAllowance ?? null;
     const remaining = info.remaining ?? null;
     const ad = info.addons;
@@ -31,11 +32,11 @@ export function nextUsage (prev, info) {
         max = null;
         maxAddons = 0;
     } else if (max == null || addons === 0 || addons > maxAddons || allowance !== prev.allowance
-        || (remaining ?? 0) > max || (remaining ?? 0) > (prev.remaining ?? 0)) {
+        || month !== prev.month || (remaining ?? 0) > max) {
         max = allowance + addons;
         maxAddons = addons;
     }
-    return { allowance, remaining, addons, max, maxAddons, unit: info.unit ?? 'microcents', updatedAt: Date.now() };
+    return { allowance, remaining, addons, max, maxAddons, month, unit: info.unit ?? 'microcents', updatedAt: now.getTime() };
 }
 
 export class Pool {
