@@ -20,7 +20,7 @@ export ANTHROPIC_BASE_URL=http://localhost:9032    # Claude Code, Anthropic SDKs
 export OPENAI_BASE_URL=http://localhost:9032/v1    # OpenAI SDKs, Codex, etc.
 ```
 
-The web UI lives at the same address (`pprox open`). It shows each account's monthly credit, lets you add/disable/remove accounts, pick a routing strategy, and set model aliases.
+The web UI lives at the same address (`pprox open`). It shows each account's credit (monthly plus any addon credit), lets you add/disable/remove accounts, pick a routing strategy, and set model aliases.
 
 ## Endpoints
 
